@@ -3,4 +3,4 @@ install:
 	poetry install
 
 start:
-	poetry run python AnimeRandomazer/main.py
+	poetry run python main.py
