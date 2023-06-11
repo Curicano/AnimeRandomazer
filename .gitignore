@@ -2,3 +2,4 @@
 config.json
 anime-randomazer-venv
 .vscode
+__pycache__
