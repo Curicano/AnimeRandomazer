@@ -2,9 +2,8 @@ from os import environ#, _exit
 from requests import Session
 from random import choice
 
-from telebot import TeleBot
+from telebot import TeleBot#, apihelper
 # from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-from telebot import apihelper
 from bs4 import BeautifulSoup as bs
 from dotenv import load_dotenv
 
