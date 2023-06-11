@@ -12,7 +12,7 @@ import keyboards
 
 load_dotenv()
 CHAT_ID = environ.get("chatId")
-apihelper.proxy = {"http": environ.get("proxy")}
+#apihelper.proxy = {"http": environ.get("proxy")}
 bot = TeleBot(token=environ.get("token"))
 
 keyboards_layout = keyboards.ReplyKeyboardsLayout()
