@@ -1,6 +1,6 @@
 install:
-	pip install poetry && \
-	poetry install
+	python -m pip install --upgrade pip && \
+	pip install -r requirements.txt
 
 start:
-	poetry run python main.py
+	python main.py
