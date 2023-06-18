@@ -1,18 +1,21 @@
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 class ReplyKeyboardsLayout:
     def __init__(self) -> None:
         self._current_layout = 0
 
-    def mainMenu(self):
+    def authMenu(self):
         markup = ReplyKeyboardMarkup(True)
-        markup.add(KeyboardButton("Авторизоваться"))
+        markup.add(KeyboardButton("Авторизоваться"),
+                   KeyboardButton("Топ популярных"))
         return markup
 
-    def menu(self):
+    def mainMenu(self):
         markup = ReplyKeyboardMarkup(True)
-        markup.add(KeyboardButton("Random"))
+        markup.add(KeyboardButton("Профиль"),
+                   KeyboardButton("Случайное"),
+                   KeyboardButton("Выйти"))
         return markup
 
     def currentLayout(self):

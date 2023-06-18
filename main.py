@@ -1,94 +1,203 @@
-from os import environ#, _exit
-from requests import Session
+from os import environ
+from requests import Session, get
 from random import choice
 
-from telebot import TeleBot#, apihelper
-# from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot import TeleBot
+from telebot.formatting import hlink
 from bs4 import BeautifulSoup as bs
 from dotenv import load_dotenv
+from fake_useragent import FakeUserAgent
 
 import keyboards
 
 load_dotenv()
-CHAT_ID = environ.get("chatId")
-#apihelper.proxy = {"http": environ.get("proxy")}
-bot = TeleBot(token=environ.get("token"))
+bot = TeleBot(environ.get("TOKEN"))
 
-keyboards_layout = keyboards.ReplyKeyboardsLayout()
+user_dict = {}
 
 
-class S():
-    def __init__(self) -> None:
+class UserSession:
+    def __init__(self, login) -> None:
+        self.login = login
+        self.password = None
         self.session = Session()
 
-    def auth(self, chat_id):
+    def auth(self) -> bool:
         data = {
-            "login_name": environ.get("login_name"),
-            "login_password": environ.get("login_password"),
-            "login": environ.get("login")
+            "login_name": self.login,
+            "login_password": self.password,
+            "login": "submit"
         }
         header = {
-            "user-agent": environ.get("userAgent")
+            "user-agent": FakeUserAgent.random
         }
-        self.response = self.session.post(environ.get("url"), data, header)
-        bot.send_message(chat_id, "Успешно",
-                         reply_markup=keyboards_layout.menu())
+        self.response = self.session.post(
+            "https://animego.online", data, header)
+        return True
 
-    def update(self, chat_id):
+    def unauth(self) -> bool:
         self.session.close()
-        self.auth(chat_id)
+        return True
 
-    def getRandomAnime(self, chat_id):
+    # def update(self):
+    #     pass
+
+    def getProfile(self) -> dict:
+        self.response = self.session.get(
+            "https://animego.online/user/" + self.login)
+        soup = bs(self.response.text, "lxml")
+        info = {}
+        info["name"] = soup.find("h2", class_="usp__name").text
+        info["group"] = soup.find("div", class_="usp__group").text
+        activity = soup.find(
+            "div", class_="usp__activity d-flex jc-flex-start stretch-free-width")
+        info["friends"] = activity.find_all("div")[1].text
+        info["comments"] = activity.find_all("div")[3].text
+        usp_list = soup.find("ul", class_="usp__list d-flex jc-space-between")
+        keys = ["register", "visit", "fullname", "gender"]
+        for key, value in zip(keys, usp_list.find_all("li")):
+            info[key] = value.text
+        tabs = soup.find("ul", class_="tabs__caption")
+        keys = ["see", "viewed", "abandoned", "planned",
+                "postponed", "reviewing", "favorites"]
+        for key, value in zip(keys, tabs.find_all("li")):
+            info[key] = self.extractInt(value.text)
+        return info
+
+    def extractInt(self, text: str) -> int | None:
+        length = len(text)
+
+        integers = None
+        i = 0
+
+        while i < length:
+            s_int = ''
+            while i < length and '0' <= text[i] <= '9':
+                s_int += text[i]
+                i += 1
+            i += 1
+            if s_int != '':
+                integers = int(s_int)
+        return integers
+
+    def getRandomAnime(self):
+        self.response = self.session.get(
+            "https://animego.online/user/" + self.login)
         soup = bs(self.response.text, "lxml")
         tab4 = soup.find("div", id="tabz-4")
         animes = []
         for anime in tab4.find_all(
                 "div", class_="popular-item d-flex ai-center popular-item__last newlist-item"):
+            a = {}
             title = anime.find(
                 "a", class_="popular-item__title ws-nowrap").text
+            a["title"] = title
             url = anime.find(
                 "a", class_="popular-item__img img-fit-cover", href=True)
-            a = {
-                "title": title,
-                "url": url["href"]
-            }
+            a["url"] = url.get("href")
+            rate = anime.find(
+                "div", class_="th-meta-rate d-flex ai-center").text
+            a["rate"] = rate.strip("\n \t")
+            category = anime.find("small").text
+            a["category"] = category
             animes.append(a)
-        r = choice(animes)
-        bot.send_message(
-            chat_id, f"Всего запланированных аниме: {len(animes)}")
-        bot.send_message(
-            chat_id, f"Рандомно выбранное:\n{r['title']} (<a href='{r['url']}'>ссылка</a>)", parse_mode="HTML")
+        return choice(animes)
 
 
-session = S()
+def process_login_step(message) -> None:
+    try:
+        chat_id = message.chat.id
+        login = message.text
+        user = UserSession(login)
+        user_dict[chat_id] = user
+        msg = bot.send_message(chat_id, "Ага, теперь введи пароль:")
+        bot.register_next_step_handler(msg, process_password_step)
+    except Exception as exc:
+        bot.reply_to(message, 'oooops')
 
 
-@bot.message_handler(commands=["start", "quit"])
-def commandsHandler(message):
-    chat_id = str(message.chat.id)
-    text = message.text
-    if chat_id == CHAT_ID:
-        match text:
-            case "/start":
-                bot.send_message(
-                    chat_id, f"Привет {message.from_user.first_name}!", reply_markup=keyboards_layout.mainMenu())
-            # case "/quit":
-            #     _exit(999)
+def process_password_step(message) -> None:
+    try:
+        chat_id = message.chat.id
+        password = message.text
+        user = user_dict[chat_id]
+        user.password = password
+        if user.auth():
+            bot.send_message(chat_id, "Успешно!",
+                             reply_markup=keyboards_layout.mainMenu())
+        else:
+            bot.send_message(chat_id, "Ошибка!")
+    except Exception as exc:
+        bot.reply_to(message, 'oooops')
+        print(exc)
+
+
+def getTopPopular() -> list:
+    response = get("https://animego.online")
+    soup = bs(response.text, "lxml")
+    popular = soup.find("div", id="owl-popular")
+    popular_animes = []
+    for poster in popular.find_all("a", class_="poster-item grid-item", href=True):
+        a = {}
+        a["title"] = poster.text.strip("\n")
+        a["url"] = "https://animego.online" + poster["href"]
+        popular_animes.append(a)
+    return popular_animes
+
+
+def isAuth(chat_id: str | int) -> bool:
+    if user_dict.get(chat_id):
+        return True
     else:
-        pass
+        bot.send_message(
+            chat_id, "Ты не авторизован!\nВведи /start или выбери из меню команд для перезапуска бота")
+        return False
 
 
-@bot.message_handler()
-def messageHandler(message):
-    chat_id = str(message.chat.id)
+@bot.message_handler(["start", "test"])
+def commandsHandler(message) -> None:
+    chat_id = message.chat.id
     text = message.text
-    if chat_id == CHAT_ID:
-        match text:
-            case "Авторизоваться":
-                session.auth(chat_id)
-            case "Random":
-                session.getRandomAnime(chat_id)
+    match text:
+        case "/start":
+            bot.send_message(
+                chat_id, f"Привет {message.from_user.first_name}!", reply_markup=keyboards_layout.authMenu())
+        case "/test":
+            pass
+
+
+@bot.message_handler(func=lambda m: True)
+def messageHandler(message) -> None:
+    chat_id = message.chat.id
+    text = message.text
+    match text:
+        case "Авторизоваться":
+            msg = bot.send_message(chat_id, "Хорошо, напиши мне свой логин:")
+            bot.register_next_step_handler(msg, process_login_step)
+        case "Профиль":
+            if isAuth(chat_id):
+                info = user_dict.get(chat_id).getProfile()
+                bot.send_message(chat_id, f"👤Профиль\n ├ Ваш юзернейм: {info['name']}\n ├ Группа: {info['group']}\n ├ Друзей: {info['friends']}\n ├ Комментариев: {info['comments']}\n ├ {info['visit']}\n ├ {info['register']}\n ├ {info['fullname']}\n └ {info['gender']}\n\nℹ️ Статистика\n ├ Смотрю: {info['see']}\n ├ Просмотрено: {info['viewed']}\n ├ Брошено: {info['abandoned']}\n ├ Запланировано: {info['planned']}\n ├ Отложено: {info['postponed']}\n ├ Пересматриваю: {info['reviewing']}\n └ В избранном: {info['favorites']}")
+        case "Выйти":
+            if isAuth(chat_id):
+                user_dict.get(chat_id).unauth()
+                del user_dict[chat_id]
+                bot.send_message(chat_id, "Успешно!",
+                                 reply_markup=keyboards_layout.authMenu())
+        case "Случайное":
+            if isAuth(chat_id):
+                anime = user_dict.get(chat_id).getRandomAnime()
+                bot.send_message(
+                    chat_id, f"Случайно выбранное аниме:\n\n{anime['title']} ({hlink('ссылка', anime['url'])})\n🔖Категории: {anime['category']}\n⭐Рейтинг: {anime['rate']}", parse_mode="HTML")
+        case "Топ популярных":
+            animes = getTopPopular()
+            text = "🔥 Популярные аниме\n\n"
+            for anime in animes:
+                text += f"{anime['title']} ({hlink('ссылка', anime['url'])})\n"
+            bot.send_message(chat_id, text, parse_mode="HTML",
+                             disable_web_page_preview=True)
 
 
 if __name__ == '__main__':
-	bot.polling(none_stop=True, interval=0)
+    keyboards_layout = keyboards.ReplyKeyboardsLayout()
+    bot.infinity_polling(skip_pending=True)
